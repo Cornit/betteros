@@ -1,4 +1,4 @@
-_G._HOST = _G._HOST .. " (BetterOS 3.0.0)"
+_G._HOST = _G._HOST .. " (BetterOS 3.0.1)"
 
 local fs = rawget(_G, "fs")
 
@@ -35,7 +35,7 @@ local betteros = {
   _VERSION = {
     major = 3,
     minor = 0,
-    patch = 0
+    patch = 1
   },
   queueEvent  = pull(os, "queueEvent"),
   startTimer  = pull(os, "startTimer"),

@@ -9,9 +9,9 @@ local thread = require("betteros.thread")
 local textutils = require("textutils")
 
 if os.version then
-  textutils.coloredPrint(colors.yellow, os.version(), colors.white)
+  textutils.coloredPrint(colors.green, "Shell", colors.gray, " - ", colors.cyan, os.version(), colors.white)
 else
-  textutils.coloredPrint(colors.yellow, betteros.version(), colors.white)
+  textutils.coloredPrint(colors.green, "Shell", colors.gray, " - ", colors.cyan, betteros.version(), colors.white)
 end
 
 thread.vars().parentShell = thread.id()
@@ -64,9 +64,11 @@ end
 
 local history = {}
 while true do
-  term.setTextColor(colors.yellow)
+  term.setTextColor(colors.cyan)
   term.setBackgroundColor(colors.black)
-  betteros.write(shell.dir().."> ")
+  betteros.write(shell.dir())
+  term.setTextColor(colors.red)
+  betteros.write(" $ ")
   term.setTextColor(colors.white)
 
   local text = term.read(nil, history, shell.complete)
