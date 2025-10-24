@@ -14,6 +14,6 @@ if not path then
   error(err, 0)
 end
 
-thread.setFocus((thread.launchTab(function()
+thread.setFocusedTab((thread.launchTab(function()
   shell.exec(path, table.unpack(args, 2))
 end, args[1])))
