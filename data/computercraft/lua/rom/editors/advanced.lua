@@ -7,7 +7,7 @@ local colors = require("colors")
 local settings = require("settings")
 local textutils = require("textutils")
 
-local args = {...}
+local args = { ... }
 
 local type_colors = {
   separator = colors[settings.get("edit.color_separator") or "lightBlue"],
@@ -29,7 +29,7 @@ local hscroll = 0
 local scroll_offset = settings.get("edit.scroll_offset") or 3
 local scroll_increment = 0
 local scroll_factor = settings.get("edit.scroll_factor") or 8
-local unsaved, changed = false, true
+local unsaved, changedRanges = false, {}
 local file = args[1] or ".new"
 local status = "Press Ctrl for menu"
 
@@ -38,7 +38,7 @@ if args[1] then
 
   if handle then
     for line in handle:lines() do
-      lines[#lines+1] = line
+      lines[#lines + 1] = line
     end
     handle:close()
   end
@@ -52,18 +52,18 @@ local function redraw()
   local w, h = term.getSize()
 
   -- this seems to provide a good responsiveness curve on my machine
-  scroll_increment = math.floor(h/scroll_factor)
+  scroll_increment = math.floor(h / scroll_factor)
 
   win.reposition(1, 1, w, h)
 
   win.setVisible(false)
 
-  for i=1, h - 1, 1 do
-    local line = linesDraw[i]
+  for i = 1, h - 1, 1 do
+    local line = linesDraw[scroll + i]
     win.setCursorPos(1 - hscroll, i)
     win.clearLine()
     if line then
-      for t=1, #line, 1 do
+      for t = 1, #line, 1 do
         local item = line[t]
         if type(item) == "number" then
           win.setTextColor(item)
@@ -87,29 +87,35 @@ local function redraw()
 end
 
 local syntax = require("edit.syntax")
-  .new("/betteros/modules/main/edit/syntax/lua.lua")
+    .new("/betteros/modules/main/edit/syntax/lua.lua")
 
-local function rehighlight()
+local function rehighlight(fromLine, toLine)
+  if fromLine == nil then
+    fromLine = 1
+  end
+
+  if toLine == nil then
+    toLine = #lines
+  end
+
   local line = {}
-  linesDraw = {}
+  local localLinesDraw = {}
   local _, h = term.getSize()
-  local text = table.concat(lines, "\n", scroll+1,
-    math.min(#lines, scroll+h+1)) or ""
+  local text = table.concat(lines, "\n", math.max(1, fromLine), math.min(#lines, toLine)) or ""
   for token, ttype in syntax(text) do
     if token == "\n" then
-      linesDraw[#linesDraw+1] = line
+      localLinesDraw[#localLinesDraw + 1] = line
       line = {}
-
     else
       repeat
         local bit = token:find("\n")
         local nl = not not bit
         local chunk = token:sub(1, bit or #token)
-        token = token:sub(#chunk+1)
-        line[#line+1] = type_colors[ttype] or colors.white
-        line[#line+1] = chunk
+        token = token:sub(#chunk + 1)
+        line[#line + 1] = type_colors[ttype] or colors.white
+        line[#line + 1] = chunk
         if nl then
-          linesDraw[#linesDraw+1] = line
+          localLinesDraw[#localLinesDraw + 1] = line
           line = {}
         end
       until #token == 0
@@ -117,7 +123,11 @@ local function rehighlight()
   end
 
   if #line > 0 then
-    linesDraw[#linesDraw+1] = line
+    localLinesDraw[#localLinesDraw + 1] = line
+  end
+
+  for i = 1, #localLinesDraw, 1 do
+    linesDraw[fromLine + i - 1] = localLinesDraw[i]
   end
 end
 
@@ -132,9 +142,8 @@ local function save()
   local handle, err = io.open(file, "w")
   if not handle then
     status = err
-
   else
-    for i=1, #lines, 1 do
+    for i = 1, #lines, 1 do
       handle:write(lines[i] .. "\n")
     end
     handle:close()
@@ -155,18 +164,16 @@ local function processInput()
 
     if cx > #line then
       line = line .. id
-
     elseif cx == 1 then
       line = id .. line
-
     else
-      line = line:sub(0, cx-1) .. id .. line:sub(cx)
+      line = line:sub(0, cx - 1) .. id .. line:sub(cx)
     end
 
     cx = cx + 1
     lines[cy] = line
-    changed = true
-
+    hscroll = math.max(0, cx - w)
+    table.insert(changedRanges, { from = cy, to = cy })
   elseif event == "key" then
     id = keys.getName(id)
 
@@ -176,16 +183,15 @@ local function processInput()
 
       if cx == 1 and cy > 1 then
         local previous = table.remove(lines, cy - 1)
+        table.remove(linesDraw, cy - 1)
         cy = cy - 1
         cx = #previous + 1
         line = previous .. line
-
       else
         if #line > 0 then
           if cx > #line then
             cx = cx - 1
             line = line:sub(1, -2)
-
           elseif cx > 1 then
             line = line:sub(0, cx - 2) .. line:sub(cx)
             cx = cx - 1
@@ -194,27 +200,46 @@ local function processInput()
       end
 
       lines[cy] = line
-      changed = true
-
+      hscroll = math.max(0, cx - w)
+      table.insert(changedRanges, { from = cy, to = cy + 1 })
     elseif id == "enter" then
       if cx == 1 then
         table.insert(lines, cy, "")
-
+        table.insert(linesDraw, cy, {})
       elseif cx > #lines[cy] then
-        table.insert(lines, cy+1, "")
-
+        table.insert(lines, cy + 1, "")
+        table.insert(linesDraw, cy + 1, {})
       else
         local line = lines[cy]
         local before, after = line:sub(0, cx - 1), line:sub(cx)
         lines[cy] = before
         table.insert(lines, cy + 1, after)
+        table.insert(linesDraw, cy + 1, {})
       end
 
       cy = cy + 1
       cx = 1
+      hscroll = math.max(0, cx - w)
+      table.insert(changedRanges, { from = cy - 1, to = cy + 1 })
+    elseif id == "delete" then
+      local line = lines[cy]
+      unsaved = true
 
-      changed = true
+      if cx > #line then
+        if cy < #lines then
+          local next = table.remove(lines, cy + 1)
+          table.remove(linesDraw, cy + 1)
+          line = line .. next
+        end
+      else
+        if #line > 0 then
+          line = line:sub(0, cx - 1) .. line:sub(cx + 1)
+        end
+      end
 
+      lines[cy] = line
+      hscroll = math.max(0, cx - w)
+      table.insert(changedRanges, { from = cy, to = cy + 1 })
     elseif id == "up" then
       if cy > 1 then
         cy = cy - 1
@@ -222,13 +247,12 @@ local function processInput()
           local old_scroll = scroll
           scroll = math.max(0, scroll - scroll_increment)
           if scroll < old_scroll then
-            rehighlight()
+
           end
         end
       end
 
       cx = math.min(cx, #lines[cy] + 1)
-
     elseif id == "down" then
       if cy < #lines then
         cy = math.min(#lines, cy + 1)
@@ -238,27 +262,24 @@ local function processInput()
           scroll = math.max(0, math.min(#lines - h + 1,
             scroll + scroll_increment))
           if scroll > old_scroll then
-            rehighlight()
+
           end
         end
       end
 
       cx = math.min(cx, #lines[cy] + 1)
-
     elseif id == "left" then
       if cx > 1 then
         cx = cx - 1
       end
 
       hscroll = math.max(0, cx - w)
-
     elseif id == "right" then
       if cx < #lines[cy] + 1 then
         cx = cx + 1
       end
 
       hscroll = math.max(0, cx - w)
-
     elseif id == "leftCtrl" or id == "rightCtrl" then
       status = "S:save  E:exit"
       menu = true
@@ -278,15 +299,12 @@ local function processMenuInput()
         term.at(1, 1).clear()
         run = false
       end
-
     elseif id:lower() == "c" and menu == 2 then
       menu = false
-
     elseif id:lower() == "s" then
       save()
       menu = false
     end
-
   elseif event == "key" then
     id = keys.getName(id)
 
@@ -297,8 +315,13 @@ local function processMenuInput()
   end
 end
 
+rehighlight()
+
 while run do
-  if changed then rehighlight() changed = false end
+  while #changedRanges > 0 do
+    local range = table.remove(changedRanges, 1)
+    rehighlight(range.from, range.to)
+  end
   redraw()
   if menu then
     processMenuInput()
