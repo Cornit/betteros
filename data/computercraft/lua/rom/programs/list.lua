@@ -1,6 +1,6 @@
 -- list
 
-local args = {...}
+local args = { ... }
 
 local fs = require("fs")
 local shell = require("shell")
@@ -20,27 +20,34 @@ local function list_dir(dir)
   end
 
   local raw_files = fs.list(dir)
-  local files, dirs = {}, {}
+  local files, dirs, hiddens = {}, {}, {}
 
-  for i=1, #raw_files, 1 do
+  for i = 1, #raw_files, 1 do
     local full = fs.combine(dir, raw_files[i])
 
-    if raw_files[i]:sub(1,1) ~= "." or show_hidden then
-      if fs.isDir(full) then
-        dirs[#dirs+1] = raw_files[i]
-
+    if raw_files[i]:sub(1, 1) ~= "." or show_hidden then
+      if raw_files[i]:sub(1, 1) == "." and show_hidden then
+        if fs.isDir(full) then
+          hiddens[#hiddens + 1] = raw_files[i] .. "/"
+        else
+          hiddens[#hiddens + 1] = raw_files[i]
+        end
       else
-        files[#files+1] = raw_files[i]
+        if fs.isDir(full) then
+          dirs[#dirs + 1] = raw_files[i] .. "/"
+        else
+          files[#files + 1] = raw_files[i]
+        end
       end
     end
   end
 
-  textutils.pagedTabulate(colors.green, dirs, colors.white, files)
+  textutils.pagedTabulate(colors.green, dirs, colors.white, files, colors.gray, hiddens)
 end
 
-for i=1, #args, 1 do
+for i = 1, #args, 1 do
   if #args > 1 then
-    textutils.coloredPrint(colors.yellow, args[i]..":\n", colors.white)
+    textutils.coloredPrint(colors.yellow, args[i] .. ":\n", colors.white)
   end
   list_dir(args[i])
 end

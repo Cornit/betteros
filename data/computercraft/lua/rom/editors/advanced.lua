@@ -29,7 +29,7 @@ local hscroll = 0
 local scroll_offset = settings.get("edit.scroll_offset") or 3
 local scroll_increment = 0
 local scroll_factor = settings.get("edit.scroll_factor") or 8
-local unsaved, changedRanges = false, {}
+local unsaved, changedLines = false, {}
 local file = args[1] or ".new"
 local status = "Press Ctrl for menu"
 
@@ -80,7 +80,7 @@ local function redraw()
   win.write(status)
   win.setTextColor(colors.white)
 
-  win.setCursorPos(math.min(w, cx), cy - scroll)
+  win.setCursorPos(math.min(w, math.max(cx - hscroll, 1)), cy - scroll)
   win.setCursorBlink(true)
 
   win.setVisible(true)
@@ -122,9 +122,7 @@ local function rehighlight(fromLine, toLine)
     end
   end
 
-  if #line > 0 then
-    localLinesDraw[#localLinesDraw + 1] = line
-  end
+  localLinesDraw[#localLinesDraw + 1] = line
 
   for i = 1, #localLinesDraw, 1 do
     linesDraw[fromLine + i - 1] = localLinesDraw[i]
@@ -172,8 +170,8 @@ local function processInput()
 
     cx = cx + 1
     lines[cy] = line
-    hscroll = math.max(0, cx - w)
-    table.insert(changedRanges, { from = cy, to = cy })
+    -- hscroll = math.max(0, cx - w)
+    table.insert(changedLines, { from = cy, to = cy })
   elseif event == "key" then
     id = keys.getName(id)
 
@@ -200,8 +198,8 @@ local function processInput()
       end
 
       lines[cy] = line
-      hscroll = math.max(0, cx - w)
-      table.insert(changedRanges, { from = cy, to = cy + 1 })
+      -- hscroll = math.max(0, cx - w)
+      table.insert(changedLines, { from = cy - 1, to = cy + 1 })
     elseif id == "enter" then
       if cx == 1 then
         table.insert(lines, cy, "")
@@ -219,8 +217,8 @@ local function processInput()
 
       cy = cy + 1
       cx = 1
-      hscroll = math.max(0, cx - w)
-      table.insert(changedRanges, { from = cy - 1, to = cy + 1 })
+      -- hscroll = math.max(0, cx - w)
+      table.insert(changedLines, { from = cy - 1, to = cy + 1 })
     elseif id == "delete" then
       local line = lines[cy]
       unsaved = true
@@ -238,18 +236,18 @@ local function processInput()
       end
 
       lines[cy] = line
-      hscroll = math.max(0, cx - w)
-      table.insert(changedRanges, { from = cy, to = cy + 1 })
+      -- hscroll = math.max(0, cx - w)
+      table.insert(changedLines, { from = cy - 1, to = cy + 1 })
     elseif id == "up" then
       if cy > 1 then
         cy = cy - 1
-        if cy - scroll < scroll_offset then
-          local old_scroll = scroll
-          scroll = math.max(0, scroll - scroll_increment)
-          if scroll < old_scroll then
+        -- if cy - scroll < scroll_offset then
+        --   local old_scroll = scroll
+        --   scroll = math.max(0, scroll - scroll_increment)
+        --   if scroll < old_scroll then
 
-          end
-        end
+        --   end
+        -- end
       end
 
       cx = math.min(cx, #lines[cy] + 1)
@@ -257,14 +255,14 @@ local function processInput()
       if cy < #lines then
         cy = math.min(#lines, cy + 1)
 
-        if cy - scroll > h - scroll_offset then
-          local old_scroll = scroll
-          scroll = math.max(0, math.min(#lines - h + 1,
-            scroll + scroll_increment))
-          if scroll > old_scroll then
+        -- if cy - scroll > h - scroll_offset then
+        --   local old_scroll = scroll
+        --   scroll = math.max(0, math.min(#lines - h + 1,
+        --     scroll + scroll_increment))
+        --   if scroll > old_scroll then
 
-          end
-        end
+        --   end
+        -- end
       end
 
       cx = math.min(cx, #lines[cy] + 1)
@@ -273,13 +271,13 @@ local function processInput()
         cx = cx - 1
       end
 
-      hscroll = math.max(0, cx - w)
+      -- hscroll = math.max(0, cx - w)
     elseif id == "right" then
       if cx < #lines[cy] + 1 then
         cx = cx + 1
       end
 
-      hscroll = math.max(0, cx - w)
+      -- hscroll = math.max(0, cx - w)
     elseif id == "leftCtrl" or id == "rightCtrl" then
       status = "S:save  E:exit"
       menu = true
@@ -318,10 +316,29 @@ end
 rehighlight()
 
 while run do
-  while #changedRanges > 0 do
-    local range = table.remove(changedRanges, 1)
-    rehighlight(range.from, range.to)
+  local w, h = term.getSize()
+
+  while cy < (scroll + 1) do
+    scroll = scroll - 1
   end
+
+  while cy > (scroll + h - 1) do
+    scroll = scroll + 1
+  end
+
+  while cx < (hscroll + 1) do
+    hscroll = hscroll - 1
+  end
+
+  while cx > (hscroll + w) do
+    hscroll = hscroll + 1
+  end
+
+  while #changedLines > 0 do
+    local changedLine = table.remove(changedLines, 1)
+    rehighlight(math.max(1, math.min(changedLine.from, #lines)), math.min(#lines, math.max(1, changedLine.to)))
+  end
+
   redraw()
   if menu then
     processMenuInput()
